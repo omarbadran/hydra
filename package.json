@@ -1,0 +1,32 @@
+{
+  "name": "hydra",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:hyperstore-platform/Hydra.git",
+  "author": "Omar Badran <engineer.o.badran@gmail.com>",
+  "scripts": {
+    "clean": "rimraf coverage dist tmp",
+    "prebuild": "npm run lint",
+    "build": "tsc -p tsconfig.json",
+    "build:watch": "tsc -w -p tsconfig.json",
+    "prettier": "prettier --config .prettierrc --write .",
+    "lint": "eslint . --ext .ts --ext .mts",
+    "lint:fix": "eslint . --ext .ts --ext .mts --fix",
+    "test": "ava src/**/*.test.ts"
+  },
+  "devDependencies": {
+    "@ava/typescript": "^3.0.1",
+    "@tsconfig/node16": "^1.0.3",
+    "@types/node": "^18.6.1",
+    "@typescript-eslint/eslint-plugin": "^5.31.0",
+    "@typescript-eslint/parser": "^5.31.0",
+    "ava": "^4.3.1",
+    "eslint": "^8.20.0",
+    "eslint-config-prettier": "^8.5.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "prettier": "^2.7.1",
+    "random-access-memory": "^5.0.0",
+    "rimraf": "^3.0.2",
+    "typescript": "^4.7.4"
+  }
+}
