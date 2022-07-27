@@ -49,7 +49,7 @@ export default class Hydra {
 	 * Create a new document.
 	 *
 	 * @param document - optional values with which to initialize the entity.
-	 * @returns The id of new document
+	 * @returns The id of new document.
 	 * @public
 	 */
 	async create(document: Document): Promise<string> {
@@ -63,16 +63,47 @@ export default class Hydra {
 	}
 
 	/**
-	 * Get document by ID.
+	 * Get a document by ID.
 	 *
 	 * @param id - the id of the document you seek.
-	 * @returns the matching document
+	 * @returns The matching document or null.
 	 * @public
 	 */
-	async fetch(id: string): Promise<Document> {
+	async fetch(id: string): Promise<Document | null> {
 		let record = await this.documents.get(id);
 
+		if (!record) {
+			return null;
+		}
+
 		return record.value;
+	}
+
+	/**
+	 * Update a document.
+	 *
+	 * @param id - the id of the document you want to update.
+	 * @param document - the new document data.
+	 * @returns True on success.
+	 * @public
+	 */
+	async update(id: string, document: Document): Promise<boolean> {
+		let updated = await this.documents.put(id, document);
+
+		return true;
+	}
+
+	/**
+	 * Delete a document by ID.
+	 *
+	 * @param id - the id of the document you want to delete.
+	 * @returns True on success.
+	 * @public
+	 */
+	async delete(id: string): Promise<boolean> {
+		let deleted = await this.documents.del(id);
+
+		return true;
 	}
 
 	// update(id: string, document: object): Promise<boolean> {}

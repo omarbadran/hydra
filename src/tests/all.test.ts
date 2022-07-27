@@ -9,16 +9,34 @@ let core = () => {
 	return new Hypercore(ram);
 };
 
-test('Create & fetch a document', async (t) => {
+test('Create, fetch, update & delete a document', async (t) => {
 	const db = new Hydra(core());
 
 	await db.ready();
 
+	// Create
 	let id = await db.create({
 		name: 'omar'
 	});
 
+	// Read
 	let document = await db.fetch(id);
 
-	t.assert(document.name === 'omar');
+	t.assert(document?.name === 'omar');
+
+	// Update
+	await db.update(id, {
+		name: 'carl'
+	});
+
+	let updated = await db.fetch(id);
+
+	t.assert(updated?.name === 'carl');
+
+	// Delete
+	await db.delete(id);
+
+	let isDeleted = await db.fetch(id);
+
+	t.assert(isDeleted == null);
 });
