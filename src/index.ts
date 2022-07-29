@@ -70,7 +70,11 @@ export default class Hydra {
 			throw new Error('Document already exists with the same ID');
 		}
 
-		let insert = await this.documents.put(id, document);
+		try {
+			await this.documents.put(id, document);
+		} catch (error) {
+			throw error;
+		}
 
 		return id;
 	}
@@ -130,7 +134,17 @@ export default class Hydra {
 	 * @public
 	 */
 	async delete(id: string): Promise<boolean> {
-		let deleted = await this.documents.del(id);
+		let exists = await this.documents.get(id);
+
+		if (!exists) {
+			throw new Error('No documents exists with this ID');
+		}
+
+		try {
+			await this.documents.del(id);
+		} catch (error) {
+			throw error;
+		}
 
 		return true;
 	}
