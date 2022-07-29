@@ -17,8 +17,10 @@ test('Create, fetch, update & delete a document', async (t) => {
 	t.assert(document?.name === 'omar');
 
 	// Update
-	await db.update(id, {
-		name: 'carl'
+	await db.update(id, (doc) => {
+		doc.name = 'carl';
+
+		return doc;
 	});
 
 	let updated = await db.fetch(id);

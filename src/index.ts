@@ -55,13 +55,24 @@ export default class Hydra {
 	 * @public
 	 */
 	async create(document: Document): Promise<string> {
-		if (!document?.id) {
-			document.id = ulid();
+		let id: string;
+
+		if (document?.id) {
+			id = document.id;
+			delete document.id;
+		} else {
+			id = ulid();
 		}
 
-		let insert = await this.documents.put(document.id, document);
+		let exists = await this.documents.get(id);
 
-		return document.id;
+		if (exists) {
+			throw new Error('Document already exists with the same ID');
+		}
+
+		let insert = await this.documents.put(id, document);
+
+		return id;
 	}
 
 	/**
@@ -85,12 +96,28 @@ export default class Hydra {
 	 * Update a document.
 	 *
 	 * @param id - the id of the document you want to update.
-	 * @param document - the new document data.
+	 * @param changes - a function that returns the new document
 	 * @returns True on success.
 	 * @public
 	 */
-	async update(id: string, document: Document): Promise<boolean> {
-		let updated = await this.documents.put(id, document);
+	async update(id: string, changes: (document: Document) => Document): Promise<boolean> {
+		let exists = await this.documents.get(id);
+
+		if (!exists) {
+			throw new Error('No documents exists with this ID');
+		}
+
+		let updated = changes(exists.value);
+
+		if (updated?.id) {
+			throw new Error("Fields with the key 'id' are not allowed");
+		}
+
+		try {
+			await this.documents.put(id, updated);
+		} catch (error) {
+			throw error;
+		}
 
 		return true;
 	}
