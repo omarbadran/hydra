@@ -1,16 +1,8 @@
 import test from 'ava';
-import Hydra from '../index';
-// @ts-ignore
-import ram from 'random-access-memory';
-// @ts-ignore
-import Hypercore from 'hypercore';
-
-let core = () => {
-	return new Hypercore(ram);
-};
+import { createDB, arraysEqual } from './utils';
 
 test('Create, fetch, update & delete a document', async (t) => {
-	const db = new Hydra(core());
+	const db = createDB();
 
 	await db.ready();
 
@@ -39,4 +31,26 @@ test('Create, fetch, update & delete a document', async (t) => {
 	let isDeleted = await db.fetch(id);
 
 	t.assert(isDeleted == null);
+});
+
+test('Get document fields', async (t) => {
+	const db = createDB();
+
+	await db.ready();
+
+	let document = {
+		name: 'string',
+		address: {
+			hello: 'string',
+			foo: {
+				bar: 'string'
+			}
+		}
+	};
+
+	let expected = ['name', 'address', 'address.hello', 'address.foo', 'address.foo.bar'];
+
+	let fields = db._docFields(document);
+
+	t.assert(arraysEqual(expected, fields));
 });

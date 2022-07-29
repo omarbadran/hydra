@@ -108,11 +108,37 @@ export default class Hydra {
 		return true;
 	}
 
+	/**
+	 * Get all fields from a document recursively.
+	 *
+	 * @param document - object to scan.
+	 * @returns array of fields.
+	 * @public
+	 */
+	_docFields(document: Document, prefix?: string): Array<string> {
+		let fields: Array<string> = Object.keys(document);
+
+		for (const field of fields) {
+			if (typeof document[field] === 'object') {
+				let inner = this._docFields(document[field], field);
+
+				if (inner.length) {
+					fields = [...fields, ...inner];
+				}
+			}
+		}
+
+		if (prefix) {
+			fields = fields.map((item) => prefix.concat('.' + item));
+		}
+
+		return fields;
+	}
+
 	// all(): Array<object> {}
 	// search(query: object): Array<object> {}
 	// loadIndex(field: string, feed?: any): Promise<boolean> {}
 	// buildIndex(field: string, exclude: Array<string>): Promise<boolean> {}
 	// _indexDocument(doc: object): Promise<boolean> {}
 	// _deIndexDocument(id: string): Promise<boolean> {}
-	// _docFields(doc: object): Array<string> {}
 }
