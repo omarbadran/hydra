@@ -1,6 +1,7 @@
 import Hyperbee from 'hyperbee';
-import CBOR from 'cbor';
+import { encode, decode } from 'cbor';
 import { ulid } from 'ulid';
+import bytewise from 'bytewise';
 
 type Document = {
 	[index: string]: any;
@@ -8,11 +9,6 @@ type Document = {
 
 type Indexes = {
 	[index: string]: Hyperbee;
-};
-
-const Encoding = {
-	encode: CBOR.encode,
-	decode: CBOR.decode
 };
 
 export default class Hydra {
@@ -26,8 +22,14 @@ export default class Hydra {
 	 */
 	constructor(core: any) {
 		this.documents = new Hyperbee(core, {
-			keyEncoding: Encoding,
-			valueEncoding: Encoding
+			keyEncoding: {
+				encode: bytewise.encode,
+				decode: bytewise.decode
+			},
+			valueEncoding: {
+				encode: encode,
+				decode: decode
+			}
 		});
 
 		this.indexes = {};
@@ -106,9 +108,6 @@ export default class Hydra {
 		return true;
 	}
 
-	// update(id: string, document: object): Promise<boolean> {}
-	// fetch(id: string): Promise<object | null> {}
-	// delete(id: string): Promise<boolean> {}
 	// all(): Array<object> {}
 	// search(query: object): Array<object> {}
 	// loadIndex(field: string, feed?: any): Promise<boolean> {}
