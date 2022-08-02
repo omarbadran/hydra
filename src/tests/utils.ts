@@ -4,7 +4,7 @@ import ram from 'random-access-memory';
 // @ts-ignore
 import Hypercore from 'hypercore';
 
-// create a hypercore in memory
+// Create a hypercore in memory
 export const createCore = (): Hydra => {
 	return new Hypercore(ram);
 };
@@ -37,6 +37,7 @@ export const arraysEqual = (a: Array<any>, b: Array<any>): boolean => {
 	return true;
 };
 
+// Check if two objects have the same elements
 export const isObjectEqual = (a: { [key: string]: any }, b: { [key: string]: any }): boolean => {
 	const aKeys = Object.keys(a);
 	const bKeys = Object.keys(b);
@@ -60,6 +61,7 @@ export const isObjectEqual = (a: { [key: string]: any }, b: { [key: string]: any
 	return true;
 };
 
+// Check if variable is an object
 export const isObject = (object: object): boolean => {
 	return object != null && typeof object === 'object';
 };

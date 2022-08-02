@@ -37,10 +37,6 @@ test('Create, fetch, update & delete a document', async (t) => {
 });
 
 test('Get document fields', async (t) => {
-	const db = createDB();
-
-	await db.ready();
-
 	let document = {
 		a: 'string',
 		b: {
@@ -62,10 +58,6 @@ test('Get document fields', async (t) => {
 });
 
 test('Flatten a document', async (t) => {
-	const db = createDB();
-
-	await db.ready();
-
 	let document = {
 		a: 'string',
 		b: {
@@ -106,7 +98,27 @@ test('Indexing and de-indexing documents', async (t) => {
 	await db.initializeIndex('tags', createCore());
 	await db.initializeIndex('nested.age', createCore());
 
-	// Add some documents
+	// get index state
+	const indexState = async (): Promise<{ age: number; tags: number }> => {
+		let ageIndex: { [key: string]: string } = {};
+		let tagsIndex: { [key: string]: string } = {};
+
+		// age index
+		for await (const item of db.indexes['nested.age'].createReadStream()) {
+			ageIndex[item.key] = item.value;
+		}
+
+		// tags index
+		for await (const item of db.indexes['tags'].createReadStream()) {
+			tagsIndex[item.key] = item.value;
+		}
+
+		let lth = (obj: object): number => Object.keys(obj).length;
+
+		return { age: lth(ageIndex), tags: lth(tagsIndex) };
+	};
+
+	// CREATING DOCUMENTS
 	let firstUser = await db.create({
 		name: 'carl',
 		tags: ['one', 'two', 'three'],
@@ -123,19 +135,29 @@ test('Indexing and de-indexing documents', async (t) => {
 		}
 	});
 
-	let ageIndex: { [key: string]: string } = {};
-	let tagsIndex: { [key: string]: string } = {};
+	let state = await indexState();
 
-	// age index
-	for await (const item of db.indexes['nested.age'].createReadStream({})) {
-		ageIndex[item.key] = item.value;
-	}
+	t.assert(state.age === 2);
+	t.assert(state.tags === 7);
 
-	// tags index
-	for await (const item of db.indexes['tags'].createReadStream({})) {
-		tagsIndex[item.key] = item.value;
-	}
+	// UPDATING DOCUMENTS
+	await db.update(secondUser, (doc) => {
+		doc.tags = ['four'];
+		doc.nested.age = 20;
 
-	t.assert(Object.keys(ageIndex).length === 2);
-	t.assert(Object.keys(tagsIndex).length === 7);
+		return doc;
+	});
+
+	state = await indexState();
+
+	t.assert(state.age === 2);
+	t.assert(state.tags === 6);
+
+	// DELETING DOCUMENTS
+	await db.delete(secondUser);
+
+	state = await indexState();
+
+	t.assert(state.age === 1);
+	t.assert(state.tags === 4);
 });

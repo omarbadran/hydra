@@ -51,6 +51,16 @@ export default class Hydra {
 	}
 
 	/**
+	 * Do we have any indexes loaded?
+	 *
+	 * @returns boolean.
+	 * @public
+	 */
+	hasIndexes(): boolean {
+		return Object.keys(this.indexes).length > 0;
+	}
+
+	/**
 	 * Create a new document.
 	 *
 	 * @param document - optional values with which to initialize the entity.
@@ -73,7 +83,7 @@ export default class Hydra {
 			throw new Error('Document already exists with the same ID');
 		}
 
-		if (Object.keys(this.indexes).length) {
+		if (this.hasIndexes()) {
 			await this.indexDocument(id, document);
 		}
 
@@ -118,10 +128,18 @@ export default class Hydra {
 			throw new Error('No documents exists with this ID');
 		}
 
+		if (this.hasIndexes()) {
+			await this.deIndexDocument(id, exists.value);
+		}
+
 		let updated = changes(exists.value);
 
 		if (updated?.id) {
 			throw new Error("Fields with the key 'id' are not allowed");
+		}
+
+		if (this.hasIndexes()) {
+			await this.indexDocument(id, updated);
 		}
 
 		try {
@@ -145,6 +163,10 @@ export default class Hydra {
 
 		if (!exists) {
 			throw new Error('No documents exists with this ID');
+		}
+
+		if (this.hasIndexes()) {
+			await this.deIndexDocument(id, exists.value);
 		}
 
 		try {
@@ -177,6 +199,10 @@ export default class Hydra {
 	 * @public
 	 */
 	async initializeIndex(field: string, core?: any): Promise<boolean> {
+		if (field === 'id') {
+			throw new Error('id is automaticly indexed');
+		}
+
 		if (core) {
 			this.indexes[field] = new Hyperbee(core, { ...Encoding });
 		} else {
@@ -225,9 +251,10 @@ export default class Hydra {
 	private async deIndexDocument(id: string, document: Document): Promise<boolean> {
 		let fields = getFields(document);
 		let indexable = fields.filter((i) => Object.keys(this.indexes).includes(i));
+		let flattened = flatten(document);
 
 		for (const field of indexable) {
-			let value = document[field];
+			let value = flattened[field];
 
 			let keys = this.createIndexKeys(id, value);
 
