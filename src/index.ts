@@ -1,7 +1,7 @@
 import Hyperbee from 'hyperbee';
 import { encode, decode } from 'cbor';
 import { ulid } from 'ulid';
-import bytewise from 'bytewise';
+import * as charwise from 'charwise';
 
 type Document = {
 	[index: string]: any;
@@ -9,6 +9,14 @@ type Document = {
 
 type Indexes = {
 	[index: string]: Hyperbee;
+};
+
+let encoding = {
+	keyEncoding: 'utf-8',
+	valueEncoding: {
+		encode: encode,
+		decode: decode
+	}
 };
 
 export default class Hydra {
@@ -21,16 +29,7 @@ export default class Hydra {
 	 * @param core - a hypercore instance to store the documents
 	 */
 	constructor(core: any) {
-		this.documents = new Hyperbee(core, {
-			keyEncoding: {
-				encode: bytewise.encode,
-				decode: bytewise.decode
-			},
-			valueEncoding: {
-				encode: encode,
-				decode: decode
-			}
-		});
+		this.documents = new Hyperbee(core, { ...encoding });
 
 		this.indexes = {};
 	}
@@ -68,6 +67,10 @@ export default class Hydra {
 
 		if (exists) {
 			throw new Error('Document already exists with the same ID');
+		}
+
+		if (Object.keys(this.indexes).length) {
+			await this._indexDocument(id, document);
 		}
 
 		try {
@@ -150,36 +153,145 @@ export default class Hydra {
 	}
 
 	/**
+	 * Get all documents.
+	 *
+	 * @returns iterable stream of documents.
+	 * @public
+	 */
+	async *all(opts = {}): AsyncGenerator<Document> {
+		for await (const item of this.documents.createReadStream(opts)) {
+			yield { id: item.key, ...item.value };
+		}
+	}
+
+	/**
+	 * Flatten a document.
+	 *
+	 * @param document - object to flatten.
+	 * @returns flattened document.
+	 * @public
+	 */
+	_flatten(document: Document): Document {
+		let res: Document = {};
+
+		for (let i in document) {
+			let value = document[i];
+
+			if (typeof value == 'object' && !Array.isArray(value)) {
+				let flattened = this._flatten(value);
+
+				for (let x in flattened) {
+					res[i + '.' + x] = flattened[x];
+				}
+			} else {
+				res[i] = value;
+			}
+		}
+
+		return res;
+	}
+
+	/**
 	 * Get all fields from a document recursively.
 	 *
 	 * @param document - object to scan.
 	 * @returns array of fields.
 	 * @public
 	 */
-	_docFields(document: Document, prefix?: string): Array<string> {
-		let fields: Array<string> = Object.keys(document);
+	_fields(document: Document): Array<string> {
+		let res: Array<string> = Object.keys(document);
 
-		for (const field of fields) {
-			if (typeof document[field] === 'object') {
-				let inner = this._docFields(document[field], field);
+		for (let i in document) {
+			if (typeof document[i] == 'object' && !Array.isArray(document[i])) {
+				let fields = this._fields(document[i]);
 
-				if (inner.length) {
-					fields = [...fields, ...inner];
+				for (let x of fields) {
+					res.push(i + '.' + x);
 				}
 			}
 		}
 
-		if (prefix) {
-			fields = fields.map((item) => prefix.concat('.' + item));
-		}
-
-		return fields;
+		return res;
 	}
 
-	// all(): Array<object> {}
-	// search(query: object): Array<object> {}
-	// loadIndex(field: string, feed?: any): Promise<boolean> {}
+	/**
+	 * Load an index to this database.
+	 *
+	 * @param field - the name of the field for this index.
+	 * @param core - either a hypercore instance or a string to be used a sub bee.
+	 * @returns True on success.
+	 * @public
+	 */
+	async initializeIndex(field: string, core?: any): Promise<boolean> {
+		if (core) {
+			this.indexes[field] = new Hyperbee(core, { ...encoding });
+		} else {
+			this.indexes[field] = this.documents.sub('index.' + field);
+		}
+
+		await this.indexes[field].ready();
+
+		return true;
+	}
+
+	/**
+	 * Index a document
+	 *
+	 * @param id - id of the document.
+	 * @param document - the document to index.
+	 * @returns True on success.
+	 * @public
+	 */
+	async _indexDocument(id: string, document: Document): Promise<boolean> {
+		let fields = this._fields(document);
+		let indexable = fields.filter((i) => Object.keys(this.indexes).includes(i));
+
+		for (const field of indexable) {
+			let value = document[field];
+
+			let keys = this._createIndexKeys(id, value);
+
+			for (let key of keys) {
+				await this.indexes[field].put(key, id);
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Create sortable keys for indexing
+	 *
+	 * @param id - id of the document.
+	 * @param value - the field value to be indexed.
+	 * @returns array of keys.
+	 * @public
+	 */
+	_createIndexKeys(id: string, value: any): Array<string> {
+		let keys: Array<string> = [];
+		let append = '/' + id;
+
+		// equal & range operations
+		keys.push(charwise.encode(value) + append);
+
+		// string array operations
+		if (Array.isArray(value) && value.every((a) => typeof a === 'string')) {
+			for (const str of value) {
+				let key = charwise.encode(str) + append;
+
+				if (!value.includes(key)) {
+					keys.push(key);
+				}
+			}
+		}
+
+		return keys;
+	}
+
+	// find(query: object): Array<object> {}
 	// buildIndex(field: string, exclude: Array<string>): Promise<boolean> {}
 	// _indexDocument(doc: object): Promise<boolean> {}
 	// _deIndexDocument(id: string): Promise<boolean> {}
+	// Search operations:
+	// contain, containOneOf
 }
