@@ -1,5 +1,6 @@
 import test from 'ava';
 import { createDB, arraysEqual, isObjectEqual, createCore } from './utils';
+import { flatten, getFields } from '../utils';
 
 test('Create, fetch, update & delete a document', async (t) => {
 	const db = createDB();
@@ -55,7 +56,7 @@ test('Get document fields', async (t) => {
 
 	let expected = ['a', 'b', 'b.c', 'b.d', 'b.d.e', 'b.d.f', 'b.d.f.g'];
 
-	let fields = db._fields(document);
+	let fields = getFields(document);
 
 	t.assert(arraysEqual(fields, expected));
 });
@@ -75,7 +76,7 @@ test('Flatten a document', async (t) => {
 		}
 	};
 
-	let flattened = db._flatten(document);
+	let flattened = flatten(document);
 
 	let expected = {
 		a: 'string',
@@ -102,27 +103,31 @@ test('Indexing and de-indexing documents', async (t) => {
 	await db.ready();
 
 	// initialize indexes
-	await db.initializeIndex('age', createCore());
 	await db.initializeIndex('tags', createCore());
+	await db.initializeIndex('nested.age', createCore());
 
 	// Add some documents
 	let firstUser = await db.create({
-		name: 'omar',
-		age: 21,
-		tags: ['one', 'two', 'three']
+		name: 'carl',
+		tags: ['one', 'two', 'three'],
+		nested: {
+			age: 21
+		}
 	});
 
 	let secondUser = await db.create({
 		name: 'carl',
-		age: 19,
-		tags: ['four', 'five']
+		tags: ['four', 'five'],
+		nested: {
+			age: 19
+		}
 	});
 
 	let ageIndex: { [key: string]: string } = {};
 	let tagsIndex: { [key: string]: string } = {};
 
 	// age index
-	for await (const item of db.indexes['age'].createReadStream({})) {
+	for await (const item of db.indexes['nested.age'].createReadStream({})) {
 		ageIndex[item.key] = item.value;
 	}
 

@@ -2,6 +2,7 @@ import Hyperbee from 'hyperbee';
 import { encode, decode } from 'cbor';
 import { ulid } from 'ulid';
 import * as charwise from 'charwise';
+import { flatten, getFields } from './utils';
 
 type Document = {
 	[index: string]: any;
@@ -11,7 +12,7 @@ type Indexes = {
 	[index: string]: Hyperbee;
 };
 
-let encoding = {
+let Encoding = {
 	keyEncoding: 'utf-8',
 	valueEncoding: {
 		encode: encode,
@@ -19,6 +20,9 @@ let encoding = {
 	}
 };
 
+/**
+ * Database
+ */
 export default class Hydra {
 	documents: Hyperbee;
 	indexes: Indexes;
@@ -29,7 +33,7 @@ export default class Hydra {
 	 * @param core - a hypercore instance to store the documents
 	 */
 	constructor(core: any) {
-		this.documents = new Hyperbee(core, { ...encoding });
+		this.documents = new Hyperbee(core, { ...Encoding });
 
 		this.indexes = {};
 	}
@@ -70,7 +74,7 @@ export default class Hydra {
 		}
 
 		if (Object.keys(this.indexes).length) {
-			await this._indexDocument(id, document);
+			await this.indexDocument(id, document);
 		}
 
 		try {
@@ -165,56 +169,6 @@ export default class Hydra {
 	}
 
 	/**
-	 * Flatten a document.
-	 *
-	 * @param document - object to flatten.
-	 * @returns flattened document.
-	 * @public
-	 */
-	_flatten(document: Document): Document {
-		let res: Document = {};
-
-		for (let i in document) {
-			let value = document[i];
-
-			if (typeof value == 'object' && !Array.isArray(value)) {
-				let flattened = this._flatten(value);
-
-				for (let x in flattened) {
-					res[i + '.' + x] = flattened[x];
-				}
-			} else {
-				res[i] = value;
-			}
-		}
-
-		return res;
-	}
-
-	/**
-	 * Get all fields from a document recursively.
-	 *
-	 * @param document - object to scan.
-	 * @returns array of fields.
-	 * @public
-	 */
-	_fields(document: Document): Array<string> {
-		let res: Array<string> = Object.keys(document);
-
-		for (let i in document) {
-			if (typeof document[i] == 'object' && !Array.isArray(document[i])) {
-				let fields = this._fields(document[i]);
-
-				for (let x of fields) {
-					res.push(i + '.' + x);
-				}
-			}
-		}
-
-		return res;
-	}
-
-	/**
 	 * Load an index to this database.
 	 *
 	 * @param field - the name of the field for this index.
@@ -224,7 +178,7 @@ export default class Hydra {
 	 */
 	async initializeIndex(field: string, core?: any): Promise<boolean> {
 		if (core) {
-			this.indexes[field] = new Hyperbee(core, { ...encoding });
+			this.indexes[field] = new Hyperbee(core, { ...Encoding });
 		} else {
 			this.indexes[field] = this.documents.sub('index.' + field);
 		}
@@ -240,19 +194,45 @@ export default class Hydra {
 	 * @param id - id of the document.
 	 * @param document - the document to index.
 	 * @returns True on success.
-	 * @public
+	 * @private
 	 */
-	async _indexDocument(id: string, document: Document): Promise<boolean> {
-		let fields = this._fields(document);
+	private async indexDocument(id: string, document: Document): Promise<boolean> {
+		let fields = getFields(document);
+		let indexable = fields.filter((i) => Object.keys(this.indexes).includes(i));
+		let flattened = flatten(document);
+
+		for (const field of indexable) {
+			let value = flattened[field];
+
+			let keys = this.createIndexKeys(id, value);
+
+			for (let key of keys) {
+				await this.indexes[field].put(key, id);
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * De-index a document
+	 *
+	 * @param id - id of the document.
+	 * @param document - the document to deindex.
+	 * @returns True on success.
+	 * @private
+	 */
+	private async deIndexDocument(id: string, document: Document): Promise<boolean> {
+		let fields = getFields(document);
 		let indexable = fields.filter((i) => Object.keys(this.indexes).includes(i));
 
 		for (const field of indexable) {
 			let value = document[field];
 
-			let keys = this._createIndexKeys(id, value);
+			let keys = this.createIndexKeys(id, value);
 
 			for (let key of keys) {
-				await this.indexes[field].put(key, id);
+				await this.indexes[field].del(key, id);
 			}
 		}
 
@@ -265,9 +245,9 @@ export default class Hydra {
 	 * @param id - id of the document.
 	 * @param value - the field value to be indexed.
 	 * @returns array of keys.
-	 * @public
+	 * @private
 	 */
-	_createIndexKeys(id: string, value: any): Array<string> {
+	private createIndexKeys(id: string, value: any): Array<string> {
 		let keys: Array<string> = [];
 		let append = '/' + id;
 
@@ -290,8 +270,8 @@ export default class Hydra {
 
 	// find(query: object): Array<object> {}
 	// buildIndex(field: string, exclude: Array<string>): Promise<boolean> {}
-	// _indexDocument(doc: object): Promise<boolean> {}
-	// _deIndexDocument(id: string): Promise<boolean> {}
+	// indexDocument(doc: object): Promise<boolean> {}
+	// deIndexDocument(id: string): Promise<boolean> {}
 	// Search operations:
 	// contain, containOneOf
 }
