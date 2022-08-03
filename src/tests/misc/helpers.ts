@@ -1,4 +1,4 @@
-import Hydra from '../index';
+import Hydra from '../../index';
 // @ts-ignore
 import ram from 'random-access-memory';
 // @ts-ignore
@@ -14,7 +14,7 @@ export const createDB = (): Hydra => {
 	return new Hydra(createCore());
 };
 
-// Check if two arrays are equal (any items order)
+// Check if two arrays are equal
 export const arraysEqual = (a: Array<any>, b: Array<any>): boolean => {
 	if (a === b) {
 		return true;
@@ -29,6 +29,10 @@ export const arraysEqual = (a: Array<any>, b: Array<any>): boolean => {
 	}
 
 	for (let i = 0; i < a.length; ++i) {
+		if (isObject(a[i]) && isObject(b[i])) {
+			return isObjectEqual(a[i], b[i]);
+		}
+
 		if (a[i] !== b[i]) {
 			return false;
 		}

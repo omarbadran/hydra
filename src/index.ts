@@ -1,5 +1,5 @@
 import Hyperbee from 'hyperbee';
-import { encode, decode } from 'cbor';
+import { leveldb } from 'cbor';
 import { ulid } from 'ulid';
 import * as charwise from 'charwise';
 import { flatten, getFields } from './utils';
@@ -12,12 +12,14 @@ type Indexes = {
 	[index: string]: Hyperbee;
 };
 
-let Encoding = {
-	keyEncoding: 'utf-8',
-	valueEncoding: {
-		encode: encode,
-		decode: decode
-	}
+type Query = {
+	selector: Array<{
+		field: string;
+		method: '$eq' | '$gt' | '$gte' | '$lt' | '$lte' | '$between' | '$in' | '$all';
+		value: any;
+	}>;
+	limit?: number;
+	skip?: number;
 };
 
 /**
@@ -33,7 +35,10 @@ export default class Hydra {
 	 * @param core - a hypercore instance to store the documents
 	 */
 	constructor(core: any) {
-		this.documents = new Hyperbee(core, { ...Encoding });
+		this.documents = new Hyperbee(core, {
+			keyEncoding: 'utf-8',
+			valueEncoding: leveldb
+		});
 
 		this.indexes = {};
 	}
@@ -103,7 +108,7 @@ export default class Hydra {
 	 * @returns The matching document or null.
 	 * @public
 	 */
-	async fetch(id: string): Promise<Document | null> {
+	async one(id: string): Promise<Document | null> {
 		let record = await this.documents.get(id);
 
 		if (!record) {
@@ -111,6 +116,18 @@ export default class Hydra {
 		}
 
 		return record.value;
+	}
+
+	/**
+	 * Get all documents.
+	 *
+	 * @returns iterable stream of documents.
+	 * @public
+	 */
+	async *all(opts = {}): AsyncGenerator<Document> {
+		for await (const item of this.documents.createReadStream(opts)) {
+			yield { id: item.key, ...item.value };
+		}
 	}
 
 	/**
@@ -179,18 +196,6 @@ export default class Hydra {
 	}
 
 	/**
-	 * Get all documents.
-	 *
-	 * @returns iterable stream of documents.
-	 * @public
-	 */
-	async *all(opts = {}): AsyncGenerator<Document> {
-		for await (const item of this.documents.createReadStream(opts)) {
-			yield { id: item.key, ...item.value };
-		}
-	}
-
-	/**
 	 * Load an index to this database.
 	 *
 	 * @param field - the name of the field for this index.
@@ -204,7 +209,10 @@ export default class Hydra {
 		}
 
 		if (core) {
-			this.indexes[field] = new Hyperbee(core, { ...Encoding });
+			this.indexes[field] = new Hyperbee(core, {
+				keyEncoding: 'utf-8',
+				valueEncoding: 'utf-8'
+			});
 		} else {
 			this.indexes[field] = this.documents.sub('index.' + field);
 		}
@@ -230,10 +238,14 @@ export default class Hydra {
 		for (const field of indexable) {
 			let value = flattened[field];
 
-			let keys = this.createIndexKeys(id, value);
+			let { single, multi } = this.createIndexKeys(id, value);
 
-			for (let key of keys) {
-				await this.indexes[field].put(key, id);
+			// single key
+			await this.indexes[field].put(single, id);
+
+			// multi key
+			for (let key of multi) {
+				await this.indexes[field].sub('multi').put(key, id);
 			}
 		}
 
@@ -256,10 +268,14 @@ export default class Hydra {
 		for (const field of indexable) {
 			let value = flattened[field];
 
-			let keys = this.createIndexKeys(id, value);
+			let { single, multi } = this.createIndexKeys(id, value);
 
-			for (let key of keys) {
-				await this.indexes[field].del(key, id);
+			// single key
+			await this.indexes[field].del(single, id);
+
+			// multi key
+			for (let key of multi) {
+				await this.indexes[field].sub('multi').del(key, id);
 			}
 		}
 
@@ -271,34 +287,83 @@ export default class Hydra {
 	 *
 	 * @param id - id of the document.
 	 * @param value - the field value to be indexed.
-	 * @returns array of keys.
+	 * @returns single and/or multi keys depending on value type.
 	 * @private
 	 */
-	private createIndexKeys(id: string, value: any): Array<string> {
-		let keys: Array<string> = [];
+	private createIndexKeys(id: string, value: any): { single: string; multi: Array<string> } {
+		let multi: Array<string> = [];
 		let append = '/' + id;
 
-		// equal & range operations
-		keys.push(charwise.encode(value) + append);
+		// single key index (for primitive operations)
+		let single = charwise.encode(value) + append;
 
-		// string array operations
-		if (Array.isArray(value) && value.every((a) => typeof a === 'string')) {
+		// multi key index (for arrays)
+		if (Array.isArray(value)) {
 			for (const str of value) {
 				let key = charwise.encode(str) + append;
 
 				if (!value.includes(key)) {
-					keys.push(key);
+					multi.push(key);
 				}
 			}
 		}
 
-		return keys;
+		return { single, multi };
 	}
 
-	// find(query: object): Array<object> {}
-	// buildIndex(field: string, exclude: Array<string>): Promise<boolean> {}
-	// indexDocument(doc: object): Promise<boolean> {}
-	// deIndexDocument(id: string): Promise<boolean> {}
-	// Search operations:
-	// contain, containOneOf
+	/**
+	 * Find an item
+	 *
+	 * @param query - query options.
+	 * @returns iterable stream of matching documents.
+	 * @public
+	 */
+	async *find(query: Query): AsyncGenerator<Document> {
+		let found = 0;
+		let limit = query.limit;
+		let skipped: Array<string> = [];
+
+		for (let criteria in query.selector) {
+			let { field, method, value } = query.selector[criteria];
+
+			let opts: {
+				gt?: string;
+				lt?: string;
+				gte?: string;
+				lte?: string;
+				limit?: number;
+				reverse?: boolean;
+			} = {};
+
+			let multi = false;
+			let bee = this.indexes[field];
+
+			// $eq
+			if (method == '$eq') {
+				let val = charwise.encode(value);
+
+				opts['gt'] = val + '/';
+				opts['lt'] = val + '0';
+			}
+
+			if (multi) {
+				bee = bee.sub('multi');
+			}
+
+			// scan the index
+			let keys = bee.createReadStream(opts);
+
+			// yield the document
+			for await (const item of keys) {
+				let key = item.value;
+				let doc = await this.documents.get(key);
+
+				if (doc) {
+					yield { id: key, ...doc.value };
+				} else {
+					continue; // Show we throw an error here?
+				}
+			}
+		}
+	}
 }
