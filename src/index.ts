@@ -12,10 +12,10 @@ type Indexes = {
 	[index: string]: Hyperbee;
 };
 
-type Query = {
+export type Query = {
 	selector: Array<{
 		field: string;
-		method: '$eq' | '$gt' | '$gte' | '$lt' | '$lte' | '$between' | '$in' | '$all';
+		method: '$eq' | '$gt' | '$lt' | '$gte' | '$lte' | '$between' | '$in' | '$all';
 		value: any;
 	}>;
 	limit?: number;
@@ -28,6 +28,7 @@ type Query = {
 export default class Hydra {
 	documents: Hyperbee;
 	indexes: Indexes;
+	sep: string = '/';
 
 	/**
 	 * Create a database.
@@ -292,7 +293,7 @@ export default class Hydra {
 	 */
 	private createIndexKeys(id: string, value: any): { single: string; multi: Array<string> } {
 		let multi: Array<string> = [];
-		let append = '/' + id;
+		let append = this.sep + id;
 
 		// single key index (for primitive operations)
 		let single = charwise.encode(value) + append;
@@ -319,20 +320,18 @@ export default class Hydra {
 	 * @public
 	 */
 	async *find(query: Query): AsyncGenerator<Document> {
-		let found = 0;
-		let limit = query.limit;
-		let skipped: Array<string> = [];
+		let found: Array<string> = [];
 
 		for (let criteria in query.selector) {
 			let { field, method, value } = query.selector[criteria];
+
+			let single = charwise.encode(value) + this.sep;
 
 			let opts: {
 				gt?: string;
 				lt?: string;
 				gte?: string;
 				lte?: string;
-				limit?: number;
-				reverse?: boolean;
 			} = {};
 
 			let multi = false;
@@ -340,10 +339,54 @@ export default class Hydra {
 
 			// $eq
 			if (method == '$eq') {
-				let val = charwise.encode(value);
+				opts = {
+					gte: single,
+					lte: single
+				};
+			}
 
-				opts['gt'] = val + '/';
-				opts['lt'] = val + '0';
+			// $gt
+			if (method == '$gt') {
+				opts = {
+					gt: single
+				};
+			}
+
+			// $lt
+			if (method == '$lt') {
+				opts = {
+					lt: single
+				};
+			}
+
+			// $lte
+			if (method == '$lte') {
+				opts = {
+					lte: single
+				};
+			}
+
+			// $gte
+			if (method == '$gte') {
+				opts = {
+					gte: single
+				};
+			}
+
+			if (opts.lte) {
+				opts.lte = opts.lte + '\xff';
+			}
+
+			if (opts.gte) {
+				opts.gte = opts.gte + '\x00';
+			}
+
+			if (opts.lt) {
+				opts.lt = opts.lt + '\x00';
+			}
+
+			if (opts.gt) {
+				opts.gt = opts.gt + '\xff';
 			}
 
 			if (multi) {
