@@ -372,7 +372,7 @@ export default class Hydra {
 	): AsyncGenerator<string> {
 		let bee = this.indexes[field];
 
-		value = charwise.encode(value) + this.sep;
+		let encoded = charwise.encode(value);
 
 		let opts: {
 			gt?: string;
@@ -384,32 +384,46 @@ export default class Hydra {
 		switch (operation) {
 			case '$eq':
 				opts = {
-					gte: value,
-					lte: value
+					gte: encoded,
+					lte: encoded
 				};
 				break;
 
 			case '$gt':
 				opts = {
-					gt: value
+					gt: encoded
 				};
 				break;
 
 			case '$lt':
 				opts = {
-					lt: value
+					lt: encoded
 				};
 				break;
 
 			case '$lte':
 				opts = {
-					lte: value
+					lte: encoded
 				};
 				break;
 
 			case '$gte':
 				opts = {
-					gte: value
+					gte: encoded
+				};
+				break;
+
+			case '$between':
+				opts = {
+					gt: charwise.encode(value[0]),
+					lt: charwise.encode(value[1])
+				};
+				break;
+
+			case '$betweenInclusive':
+				opts = {
+					gte: charwise.encode(value[0]),
+					lte: charwise.encode(value[1])
 				};
 				break;
 		}
@@ -447,7 +461,7 @@ export default class Hydra {
 		}
 
 		for (let item of value) {
-			item = charwise.encode(item) + this.sep;
+			item = charwise.encode(item);
 			matched[item] = [];
 
 			let opts = this.indexScanOptions({
@@ -489,19 +503,19 @@ export default class Hydra {
 	 */
 	private indexScanOptions(opts: { [key: string]: string }): object {
 		if (opts.lte) {
-			opts.lte = opts.lte + '\xff';
+			opts.lte = opts.lte + this.sep + '\xff';
 		}
 
 		if (opts.gte) {
-			opts.gte = opts.gte + '\x00';
+			opts.gte = opts.gte + this.sep + '\x00';
 		}
 
 		if (opts.lt) {
-			opts.lt = opts.lt + '\x00';
+			opts.lt = opts.lt + this.sep + '\x00';
 		}
 
 		if (opts.gt) {
-			opts.gt = opts.gt + '\xff';
+			opts.gt = opts.gt + this.sep + '\xff';
 		}
 
 		return opts;

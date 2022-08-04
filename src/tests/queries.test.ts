@@ -64,6 +64,67 @@ test('$eq, $gt, $lt, $lte, $gte', async (t) => {
 	}
 });
 
+test('$between, $betweenInclusive', async (t) => {
+	const db = createDB();
+
+	await db.ready();
+
+	await db.initializeIndex('age', createCore());
+
+	let inserted: Result = [];
+	let targets = [
+		[0, 0],
+		[-10, 99],
+		[50, 0],
+		[49, 49.00000495049913],
+		[-8.42352345, 10000]
+	];
+
+	let ops = {
+		$between: (a: number, range: number[]) => a > range[0] && a < range[1],
+		$betweenInclusive: (a: number, range: number[]) => a >= range[0] && a <= range[1]
+	};
+
+	// Insert users
+	for (const i in users) {
+		let id = await db.create(users[i]);
+
+		inserted.push({ id, ...users[i] });
+	}
+
+	// Test all operations
+	for (const op in ops) {
+		for (const value of targets) {
+			let found: Result = [];
+
+			// Query
+			let query = db.find({
+				selector: [
+					{
+						field: 'age',
+						//@ts-ignore
+						operation: op,
+						value
+					}
+				]
+			});
+
+			for await (const item of query) {
+				found.push(item);
+			}
+
+			// What should we get?
+			let expected: Result = inserted
+				//@ts-ignore our mock data doesn't have types
+				.filter((a) => ops[op](a.age, value))
+				.sort((a, b) => a.age - b.age);
+
+			// Finish
+			t.assert(arraysEqual(expected, found));
+		}
+	}
+});
+
 test('$containAny', async (t) => {
 	const db = createDB();
 
