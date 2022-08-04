@@ -25,7 +25,7 @@ export type Query = {
 			| '$betweenInclusive'
 			| '$containAll'
 			| '$containAny';
-		value: any;
+		value: any; //to-do: don't use any here, each operation accepts different types
 	}>;
 	limit?: number;
 	skip?: number;
@@ -334,6 +334,12 @@ export default class Hydra {
 
 		for (let criteria of query.selector) {
 			let { field, operation, value } = criteria;
+
+			if (!(field in this.indexes)) {
+				throw new Error(
+					`Cannot query on field [${field}] since it is not indexed, either index this field or use all() and filter the results manually`
+				);
+			}
 
 			let multi = ['$containAll', '$containAny'].includes(criteria.operation);
 
