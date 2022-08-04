@@ -15,7 +15,16 @@ type Indexes = {
 export type Query = {
 	selector: Array<{
 		field: string;
-		method: '$eq' | '$gt' | '$lt' | '$gte' | '$lte' | '$between' | '$in' | '$all';
+		operation:
+			| '$eq'
+			| '$gt'
+			| '$lt'
+			| '$gte'
+			| '$lte'
+			| '$between'
+			| '$betweenInclusive'
+			| '$containAll'
+			| '$containAny';
 		value: any;
 	}>;
 	limit?: number;
@@ -322,91 +331,179 @@ export default class Hydra {
 	async *find(query: Query): AsyncGenerator<Document> {
 		let found: Array<string> = [];
 
-		for (let criteria in query.selector) {
-			let { field, method, value } = query.selector[criteria];
+		for (let criteria of query.selector) {
+			let { field, operation, value } = criteria;
 
-			let single = charwise.encode(value) + this.sep;
+			let multi = ['$containAll', '$containAny'].includes(criteria.operation);
 
-			let opts: {
-				gt?: string;
-				lt?: string;
-				gte?: string;
-				lte?: string;
-			} = {};
+			let keys: AsyncGenerator<string>;
 
-			let multi = false;
-			let bee = this.indexes[field];
-
-			// $eq
-			if (method == '$eq') {
-				opts = {
-					gte: single,
-					lte: single
-				};
+			if (!multi) {
+				keys = this.scanSingleIndex(field, operation, value);
+			} else {
+				keys = this.scanMultiIndex(field, operation, value);
 			}
-
-			// $gt
-			if (method == '$gt') {
-				opts = {
-					gt: single
-				};
-			}
-
-			// $lt
-			if (method == '$lt') {
-				opts = {
-					lt: single
-				};
-			}
-
-			// $lte
-			if (method == '$lte') {
-				opts = {
-					lte: single
-				};
-			}
-
-			// $gte
-			if (method == '$gte') {
-				opts = {
-					gte: single
-				};
-			}
-
-			if (opts.lte) {
-				opts.lte = opts.lte + '\xff';
-			}
-
-			if (opts.gte) {
-				opts.gte = opts.gte + '\x00';
-			}
-
-			if (opts.lt) {
-				opts.lt = opts.lt + '\x00';
-			}
-
-			if (opts.gt) {
-				opts.gt = opts.gt + '\xff';
-			}
-
-			if (multi) {
-				bee = bee.sub('multi');
-			}
-
-			// scan the index
-			let keys = bee.createReadStream(opts);
 
 			// yield the document
-			for await (const item of keys) {
-				let key = item.value;
+			for await (const key of keys) {
 				let doc = await this.documents.get(key);
 
 				if (doc) {
 					yield { id: key, ...doc.value };
 				} else {
-					continue; // Show we throw an error here?
+					continue; // Should we throw an error here?
 				}
 			}
 		}
+	}
+
+	/**
+	 * Scan single field indexes
+	 *
+	 * @param field - index field.
+	 * @param value - the value to be queried.
+	 * @returns iterable stream of matching keys.
+	 * @public
+	 */
+	private async *scanSingleIndex(
+		field: string,
+		operation: string,
+		value: any
+	): AsyncGenerator<string> {
+		let bee = this.indexes[field];
+
+		value = charwise.encode(value) + this.sep;
+
+		let opts: {
+			gt?: string;
+			lt?: string;
+			gte?: string;
+			lte?: string;
+		} = {};
+
+		switch (operation) {
+			case '$eq':
+				opts = {
+					gte: value,
+					lte: value
+				};
+				break;
+
+			case '$gt':
+				opts = {
+					gt: value
+				};
+				break;
+
+			case '$lt':
+				opts = {
+					lt: value
+				};
+				break;
+
+			case '$lte':
+				opts = {
+					lte: value
+				};
+				break;
+
+			case '$gte':
+				opts = {
+					gte: value
+				};
+				break;
+		}
+
+		opts = this.indexScanOptions(opts);
+
+		let keys = bee.createReadStream(opts);
+
+		for await (const item of keys) {
+			yield item.value;
+		}
+	}
+
+	/**
+	 * Scan multi-key indexes
+	 *
+	 * @param field - index field.
+	 * @param value - the value to be queried.
+	 * @returns iterable stream of matching keys.
+	 * @public
+	 */
+	private async *scanMultiIndex(
+		field: string,
+		operation: string,
+		value: Array<any>
+	): AsyncGenerator<string> {
+		let matched: {
+			[key: string]: Array<string>;
+		} = {};
+
+		let bee = this.indexes[field].sub('multi');
+
+		if (!Array.isArray(value)) {
+			throw new Error('This operation can only be used with arrays');
+		}
+
+		for (let item of value) {
+			item = charwise.encode(item) + this.sep;
+			matched[item] = [];
+
+			let opts = this.indexScanOptions({
+				gte: item,
+				lte: item
+			});
+
+			let keys = bee.createReadStream(opts);
+
+			for await (let key of keys) {
+				key = key.value;
+
+				if (operation === '$containAny') {
+					yield key;
+				}
+
+				if (operation === '$containAll') {
+					matched[item].push(key);
+
+					let found = Object.values(matched);
+
+					let hasAll = found.filter((a) => a.includes(key));
+
+					if (hasAll.length === value.length) {
+						// this document had all the other items too
+						yield key;
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Prepare index scan options
+	 *
+	 * @param query - query options.
+	 * @returns modified opts object that can be used to scan indexes accurately
+	 * @public
+	 */
+	private indexScanOptions(opts: { [key: string]: string }): object {
+		if (opts.lte) {
+			opts.lte = opts.lte + '\xff';
+		}
+
+		if (opts.gte) {
+			opts.gte = opts.gte + '\x00';
+		}
+
+		if (opts.lt) {
+			opts.lt = opts.lt + '\x00';
+		}
+
+		if (opts.gt) {
+			opts.gt = opts.gt + '\xff';
+		}
+
+		return opts;
 	}
 }

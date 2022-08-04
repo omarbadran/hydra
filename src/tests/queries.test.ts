@@ -1,6 +1,6 @@
 import test from 'ava';
 import { createDB, createCore, arraysEqual } from './misc/helpers';
-import { users } from './misc/data';
+import { users, posts } from './misc/data';
 
 type Result = Array<{
 	[index: string]: any;
@@ -14,7 +14,7 @@ test('$eq, $gt, $lt, $lte, $gte', async (t) => {
 	await db.initializeIndex('age', createCore());
 
 	let inserted: Result = [];
-	let targets = [-100, -1, 0, 1, 28, 45, 50, 5000];
+	let targets = [-100, -31.00245062, -1, 0, 1, 28, 28.0014, 45, 50, 50.140404, 5000];
 
 	let ops = {
 		$eq: (a: number, b: number) => a === b,
@@ -31,7 +31,7 @@ test('$eq, $gt, $lt, $lte, $gte', async (t) => {
 		inserted.push({ id, ...users[i] });
 	}
 
-	// Test all ops
+	// Test all operations
 	for (const op in ops) {
 		for (const value of targets) {
 			let found: Result = [];
@@ -42,7 +42,7 @@ test('$eq, $gt, $lt, $lte, $gte', async (t) => {
 					{
 						field: 'age',
 						//@ts-ignore
-						method: op,
+						operation: op,
 						value
 					}
 				]
@@ -62,4 +62,90 @@ test('$eq, $gt, $lt, $lte, $gte', async (t) => {
 			t.assert(arraysEqual(expected, found));
 		}
 	}
+});
+
+test('$containAny', async (t) => {
+	const db = createDB();
+
+	await db.ready();
+
+	await db.initializeIndex('tags', createCore());
+
+	let inserted: Result = [];
+	let target = ['english'];
+
+	// Insert posts
+	for (const i in posts) {
+		let id = await db.create(posts[i]);
+
+		inserted.push({ id, ...posts[i] });
+	}
+
+	let found: Result = [];
+
+	// Query
+	let query = db.find({
+		selector: [
+			{
+				field: 'tags',
+				operation: '$containAny',
+				value: target
+			}
+		]
+	});
+
+	for await (const item of query) {
+		found.push(item);
+	}
+
+	// What should we get?
+	let expected: Result = inserted
+		//@ts-ignore our mock data doesn't have types
+		.filter((a) => a.tags.includes(target[0]));
+
+	// Finish
+	t.assert(arraysEqual(expected, found));
+});
+
+test('$containAll', async (t) => {
+	const db = createDB();
+
+	await db.ready();
+
+	await db.initializeIndex('tags', createCore());
+
+	let inserted: Result = [];
+	let target = ['magical', 'crime'];
+
+	// Insert posts
+	for (const i in posts) {
+		let id = await db.create(posts[i]);
+
+		inserted.push({ id, ...posts[i] });
+	}
+
+	let found: Result = [];
+
+	// Query
+	let query = db.find({
+		selector: [
+			{
+				field: 'tags',
+				operation: '$containAll',
+				value: target
+			}
+		]
+	});
+
+	for await (const item of query) {
+		found.push(item);
+	}
+
+	// What should we get?
+	let expected: Result = inserted
+		//@ts-ignore our mock data doesn't have types
+		.filter((a) => target.every((b) => a.tags.includes(b)));
+
+	// Finish
+	t.assert(arraysEqual(expected, found));
 });
