@@ -330,6 +330,7 @@ export default class Hydra {
 	 */
 	async *find(query: Query): AsyncGenerator<Document> {
 		let found: Array<string> = [];
+		let skipped: number = 0;
 
 		for (let criteria of query.selector) {
 			let { field, operation, value } = criteria;
@@ -346,9 +347,20 @@ export default class Hydra {
 
 			// yield the document
 			for await (const key of keys) {
+				if (query?.skip && query.skip < skipped) {
+					skipped++;
+					continue;
+				}
+
+				if (query?.limit && query.limit == found.length) {
+					break;
+				}
+
 				let doc = await this.documents.get(key);
 
 				if (doc) {
+					found.push(key);
+
 					yield { id: key, ...doc.value };
 				} else {
 					continue; // Should we throw an error here?
@@ -360,10 +372,11 @@ export default class Hydra {
 	/**
 	 * Scan single field indexes
 	 *
-	 * @param field - index field.
+	 * @param field - an indexed field.
+	 * @param operation - the type of this operation.
 	 * @param value - the value to be queried.
 	 * @returns iterable stream of matching keys.
-	 * @public
+	 * @private
 	 */
 	private async *scanSingleIndex(
 		field: string,
@@ -441,9 +454,10 @@ export default class Hydra {
 	 * Scan multi-key indexes
 	 *
 	 * @param field - index field.
+	 * @param operation - the type of this operation.
 	 * @param value - the value to be queried.
 	 * @returns iterable stream of matching keys.
-	 * @public
+	 * @private
 	 */
 	private async *scanMultiIndex(
 		field: string,
@@ -457,7 +471,7 @@ export default class Hydra {
 		let bee = this.indexes[field].sub('multi');
 
 		if (!Array.isArray(value)) {
-			throw new Error('This operation can only be used with arrays');
+			throw new Error('This operation can only be used with array values');
 		}
 
 		for (let item of value) {
@@ -497,9 +511,9 @@ export default class Hydra {
 	/**
 	 * Prepare index scan options
 	 *
-	 * @param query - query options.
+	 * @param opts - query options.
 	 * @returns modified opts object that can be used to scan indexes accurately
-	 * @public
+	 * @private
 	 */
 	private indexScanOptions(opts: { [key: string]: string }): object {
 		if (opts.lte) {

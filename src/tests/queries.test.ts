@@ -6,6 +6,50 @@ type Result = Array<{
 	[index: string]: any;
 }>;
 
+test('Skip & limit', async (t) => {
+	const db = createDB();
+
+	await db.ready();
+
+	await db.initializeIndex('reactions', createCore());
+
+	let inserted: Result = [];
+
+	for (const i in posts) {
+		let id = await db.create(posts[i]);
+
+		inserted.push({ id, ...posts[i] });
+	}
+
+	let found: Result = [];
+
+	// Query
+	let query = db.find({
+		selector: [
+			{
+				field: 'reactions',
+				operation: '$gt',
+				value: 0
+			}
+		],
+		limit: 10,
+		skip: 5
+	});
+
+	for await (const item of query) {
+		found.push(item);
+	}
+
+	// What should we get?
+	let expected: Result = inserted
+		//@ts-ignore our mock data doesn't have types
+		.sort((a, b) => a.reactions - b.reactions)
+		.slice(5, 15);
+
+	// Finish
+	t.assert(arraysEqual(expected, found));
+});
+
 test('$eq, $gt, $lt, $lte, $gte', async (t) => {
 	const db = createDB();
 
@@ -14,7 +58,7 @@ test('$eq, $gt, $lt, $lte, $gte', async (t) => {
 	await db.initializeIndex('age', createCore());
 
 	let inserted: Result = [];
-	let targets = [-100, -31.00245062, -1, 0, 1, 28, 28.0014, 45, 50, 50.140404, 5000];
+	let values = [-100, -31.00245062, -1, 0, 1, 28, 28.0014, 45, 50, 50.140404, 5000];
 
 	let ops = {
 		$eq: (a: number, b: number) => a === b,
@@ -33,7 +77,7 @@ test('$eq, $gt, $lt, $lte, $gte', async (t) => {
 
 	// Test all operations
 	for (const op in ops) {
-		for (const value of targets) {
+		for (const value of values) {
 			let found: Result = [];
 
 			// Query
@@ -72,7 +116,7 @@ test('$between, $betweenInclusive', async (t) => {
 	await db.initializeIndex('age', createCore());
 
 	let inserted: Result = [];
-	let targets = [
+	let values = [
 		[0, 0],
 		[-10, 99],
 		[50, 0],
@@ -94,7 +138,7 @@ test('$between, $betweenInclusive', async (t) => {
 
 	// Test all operations
 	for (const op in ops) {
-		for (const value of targets) {
+		for (const value of values) {
 			let found: Result = [];
 
 			// Query
