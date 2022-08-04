@@ -6,38 +6,6 @@ type Result = Array<{
 	[index: string]: any;
 }>;
 
-test('Query on fields that are not indexed', async (t) => {
-	const db = createDB();
-
-	await db.ready();
-
-	let inserted: Result = [];
-
-	for (const i in posts) {
-		let id = await db.create(posts[i]);
-
-		inserted.push({ id, ...posts[i] });
-	}
-
-	let found: Result = [];
-
-	let query = db.find({
-		selector: [
-			{
-				field: 'age',
-				operation: '$gt',
-				value: 0
-			}
-		],
-		limit: 10,
-		skip: 5
-	});
-
-	for await (const item of query) {
-		found.push(item);
-	}
-});
-
 test('Skip & limit', async (t) => {
 	const db = createDB();
 

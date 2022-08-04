@@ -25,7 +25,7 @@ export type Query = {
 			| '$betweenInclusive'
 			| '$containAll'
 			| '$containAny';
-		value: any; //to-do: don't use any here, each operation accepts different types
+		value: any; //to-do: don't use any here, each operation accepts a certain type
 	}>;
 	limit?: number;
 	skip?: number;
