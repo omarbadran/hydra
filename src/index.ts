@@ -233,16 +233,43 @@ export default class Hydra {
 	}
 
 	/**
+	 * Build an index from existing documents
+	 *
+	 * @param field - the name of the field you want to index, leave empty to build all initialized indexes.
+	 * @returns True on success.
+	 * @public
+	 */
+	async buildIndex(field?: string): Promise<boolean> {
+		for await (const doc of this.documents.createReadStream()) {
+			let ignore: Array<string> = [];
+
+			if (field) {
+				ignore = Object.keys(this.indexes).filter((a) => a !== field);
+			}
+
+			await this.indexDocument(doc.key, doc.value, ignore);
+		}
+
+		return true;
+	}
+
+	/**
 	 * Index a document
 	 *
 	 * @param id - id of the document.
 	 * @param document - the document to index.
+	 * @param ignore - a list of fields to execlude from indexing.
 	 * @returns True on success.
 	 * @private
 	 */
-	private async indexDocument(id: string, document: Document): Promise<boolean> {
+	private async indexDocument(
+		id: string,
+		document: Document,
+		ignore: Array<string> = []
+	): Promise<boolean> {
 		let fields = getFields(document);
-		let indexable = fields.filter((i) => Object.keys(this.indexes).includes(i));
+		let indexes = Object.keys(this.indexes).filter((a) => !ignore.includes(a));
+		let indexable = fields.filter((i) => indexes.includes(i));
 		let flattened = flatten(document);
 
 		for (const field of indexable) {
@@ -267,12 +294,18 @@ export default class Hydra {
 	 *
 	 * @param id - id of the document.
 	 * @param document - the document to deindex.
+	 * @param ignore - a list of fields to execlude from deindexing.
 	 * @returns True on success.
 	 * @private
 	 */
-	private async deIndexDocument(id: string, document: Document): Promise<boolean> {
+	private async deIndexDocument(
+		id: string,
+		document: Document,
+		ignore: Array<string> = []
+	): Promise<boolean> {
 		let fields = getFields(document);
-		let indexable = fields.filter((i) => Object.keys(this.indexes).includes(i));
+		let indexes = Object.keys(this.indexes).filter((a) => !ignore.includes(a));
+		let indexable = fields.filter((i) => indexes.includes(i));
 		let flattened = flatten(document);
 
 		for (const field of indexable) {

@@ -2,7 +2,6 @@
   "name": "hydra",
   "version": "1.0.0",
   "main": "index.js",
-  "repository": "git@github.com:hyperstore-platform/Hydra.git",
   "author": "Omar Badran <engineer.o.badran@gmail.com>",
   "scripts": {
     "clean": "rimraf coverage dist tmp",
